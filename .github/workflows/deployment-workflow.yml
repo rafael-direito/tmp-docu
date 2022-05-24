@@ -1,0 +1,39 @@
+name: GitHub Actions Deployment Workflow
+on:
+  push:
+    branches: [ main ]
+jobs:
+  build_website:
+    runs-on: self-hosted
+    steps: 
+      - uses: actions/checkout@v3
+      - run: | # get inside the project and deal with the dependencies
+          cd ${{ github.workspace }}/project-documentation 
+          if [ -e yarn.lock ]; then
+            yarn install --frozen-lockfile
+          elif [ -e package-lock.json ]; then
+            npm ci
+          else
+            npm i
+          fi
+      - run: |
+          cd ${{ github.workspace }}/project-documentation 
+          npm run build
+
+  crete_backup:
+    needs: build_website
+    runs-on: self-hosted
+    steps:
+      - run: | # create a zip file with all the files and store it in the backups folder
+          tar -czvf /var/www/docusaurus-website-backups/backup-$(date '+%Y-%m-%d_%H:%M:%S').tar.gz /var/www/docusaurus-website
+      - run: | # remove all backups older than 7 days
+          find /var/www/docusaurus-website-backups/ -maxdepth 1 -type f -mtime +7 -print | xargs /bin/rm -f
+
+  deploy_website:
+    needs: crete_backup
+    runs-on: self-hosted
+    steps:
+      - run: | # delete old website files
+          rm -rf /var/www/docusaurus-website/*
+      - run: | # add the new ones
+          cp -r ${{ github.workspace }}/project-documentation/build/* /var/www/docusaurus-website/
